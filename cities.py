@@ -3,8 +3,8 @@ import pandas as pd
 import time
 
 # Load the data
-file_path = 'Gynaecology-Digitized-dataset.xlsx'
-data = pd.read_excel(file_path, sheet_name='result 1')
+file_path = 'lupin-digitization.xlsx'
+data = pd.read_excel(file_path, sheet_name='Result 1')
 
 # Extract unique cities from the dataset
 cities = data['state_name'].unique()
