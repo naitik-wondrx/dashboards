@@ -459,8 +459,9 @@ def main():
     st.image(logo_path, width=150)
 
     # File paths
-    patient_file = 'Consolidated_lupin-digitization.xlsx'
-    gynac_file = 'lupin-digitization.xlsx'
+    patient_file = 'data/Consolidated_lupin-digitization.xlsx'
+    gynac_file = 'data/lupin-digitization.xlsx'
+    
 
     # Load datasets
     patient_data = load_data(patient_file, sheet_name='Sheet1')
