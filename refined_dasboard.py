@@ -484,10 +484,10 @@ def main():
     # Sidebar filters for gynecology data
 
     # App Title
-    st.title("Gynaecology Patient Data Dashboard")
+    st.title("WONDRx Data Dashboard")
 
     # Visualization Tabs
-    tab1, tab2, tab3, tab4,tab5,tab6,tab7,tab8,tab9,tab10,tab11  = st.tabs([
+    tab1, tab2, tab3, tab4,tab5,tab6,tab7,tab8,tab9,tab10  = st.tabs([
         "📂 Data Types",
         "📍 Patient Data Distribution",
         "📊 Patient Demographics",
@@ -497,7 +497,6 @@ def main():
         "🧪 Diagnostics",
         "🏷️ Manufacturer Medicines",
         "🔍 Manufacturer Comparison",
-        "🩺 Vitals",
         "💰 Value-Based Comparison"
     ])
     st.sidebar.download_button(
@@ -519,8 +518,7 @@ def main():
     visualize_diagnostics(tab7, filtered_gynac_data)
     visualize_manufacturer_medicines(tab8, filtered_gynac_data)
     manufacturer_comparison_tab(tab9, filtered_gynac_data)
-    visualize_vitals(tab10, filtered_patient_data)
-    visualize_value_comparison(tab11, filtered_gynac_data)
+    visualize_value_comparison(tab10, filtered_gynac_data)
 
 if __name__ == "__main__":
     main()
