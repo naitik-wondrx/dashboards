@@ -126,4 +126,7 @@ cython_debug/
 # Data Sample Different TA
 Data_Sample_Different_TA/
 PAT.txt
-*.xlsx
+Consolidated_lupin-digitization.xlsx
+Consolidated_Patient_Data.xlsx
+Gynac.xlsx
+lupin-digitization.xlsx
