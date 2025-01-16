@@ -1,1 +1,1 @@
-streamlit run <streamlit-file-path>.py
+streamlit run streamlit-file-path.py
