@@ -12,8 +12,6 @@ def load_state_coordinates(file_path):
     return pd.read_csv(file_path)
 
 def clean_medical_data(data):
-    for col in data.select_dtypes(include=['object']).columns:
-        data[col] = data[col].str.strip()
     data['average_mrp'] = data[['min_mrp', 'max_mrp']].mean(axis=1).round(2)
     data['value'] = data['value'].str.lower().apply(lambda x: "pain in abdomen" if "pain in abd" in str(x) else x)
     replacements = {
@@ -167,37 +165,37 @@ def visualize_data_types(tab, data):
 
 def visualize_geographical_distribution(tab, data):
     with tab:
-        patient_state_counts = aggregate_geo_data(data, 'state_name', 'id')
-        st.subheader("Patient Distribution by State")
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
-        with col2:
-            st.dataframe(patient_state_counts.reset_index(drop=True))
-
-        patient_city_counts = aggregate_geo_data(data, 'city', 'id')
-        st.subheader("Patient Distribution by City")
-        col3, col4 = st.columns([3, 1])
-        with col3:
-            st.plotly_chart(create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
-        with col4:
-            st.dataframe(patient_city_counts.reset_index(drop=True))
-
-        doctor_state_counts = aggregate_geo_data(data, 'state_name', 'doctor_id')
-        st.subheader("Doctor Distribution by State")
-        col5, col6 = st.columns([3, 1])
-        with col5:
-            st.plotly_chart(create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
-        with col6:
-            st.dataframe(doctor_state_counts.reset_index(drop=True))
-
-        doctor_city_counts = aggregate_geo_data(data, 'city', 'doctor_id')
-        st.subheader("Doctor Distribution by City")
-        col7, col8 = st.columns([3, 1])
-        with col7:
-            st.plotly_chart(create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
-        with col8:
-            st.dataframe(doctor_city_counts.reset_index(drop=True))
+        with st.expander("Patient Distribution by State"):
+            patient_state_counts = aggregate_geo_data(data, 'state_name', 'id')
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
+            with col2:
+                st.dataframe(patient_state_counts.reset_index(drop=True))
+    
+        with st.expander("Patient Distribution by City"):
+            patient_city_counts = aggregate_geo_data(data, 'city', 'id')
+            col3, col4 = st.columns([3, 1])
+            with col3:
+                st.plotly_chart(create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
+            with col4:
+                st.dataframe(patient_city_counts.reset_index(drop=True))
+    
+        with st.expander("Doctor Distribution by State"):
+            doctor_state_counts = aggregate_geo_data(data, 'state_name', 'doctor_id')
+            col5, col6 = st.columns([3, 1])
+            with col5:
+                st.plotly_chart(create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
+            with col6:
+                st.dataframe(doctor_state_counts.reset_index(drop=True))
+    
+        with st.expander("Doctor Distribution by City"):
+            doctor_city_counts = aggregate_geo_data(data, 'city', 'doctor_id')
+            col7, col8 = st.columns([3, 1])
+            with col7:
+                st.plotly_chart(create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
+            with col8:
+                st.dataframe(doctor_city_counts.reset_index(drop=True))
 
 def visualize_patient_demographics(tab, data):
     with tab:
@@ -205,137 +203,137 @@ def visualize_patient_demographics(tab, data):
         age_group_counts, gender_counts = prepare_demographics(data)
         age_group_counts = age_group_counts.sort_values('age_group')
 
-        st.subheader("Age Group Distribution")
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_pie_chart(age_group_counts, 'age_group', 'count'))
-        with col2:
-            st.dataframe(age_group_counts.sort_values(by='age_group', ascending=True).reset_index(drop=True))
+        with st.expander("Age Group Distribution"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_pie_chart(age_group_counts, 'age_group', 'count'))
+            with col2:
+                st.dataframe(age_group_counts.sort_values(by='age_group', ascending=True).reset_index(drop=True))
 
-        st.subheader("Gender Distribution")
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count'))
-        with col2:
-            st.dataframe(gender_counts)
+        with st.expander("Gender Distribution"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count'))
+            with col2:
+                st.dataframe(gender_counts)
 
 def visualize_medicines(tab, filtered_medical_data):
     with tab:
-        st.subheader("Top Medicines")
-        top_medicines = get_top_items(filtered_medical_data, 'value', 'Medicine')
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_bar_chart(top_medicines.head(20), 'count', 'Medicine', orientation='h', text='count'))
-        with col2:
-            st.dataframe(top_medicines)
+        with st.expander("Top Medicines"):
+            top_medicines = get_top_items(filtered_medical_data, 'value', 'Medicine')
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_bar_chart(top_medicines.head(20), 'count', 'Medicine', orientation='h', text='count'))
+            with col2:
+                st.dataframe(top_medicines)
 
 def visualize_pharma_analytics(tab, filtered_medical_data):
     with tab:
         top_15_manufacturers, top_15_primary_uses = analyze_pharma_data(filtered_medical_data)
 
-        st.subheader("Top Manufacturers")
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            st.plotly_chart(create_pie_chart(top_15_manufacturers.head(15), 'manufacturers', 'count'))
-        with col2:
-            st.dataframe(top_15_manufacturers)
+        with st.expander("Top Manufacturers"):
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                st.plotly_chart(create_pie_chart(top_15_manufacturers.head(15), 'manufacturers', 'count'))
+            with col2:
+                st.dataframe(top_15_manufacturers)
 
-        st.subheader("Top Primary Uses")
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            st.plotly_chart(create_bar_chart(top_15_primary_uses.head(15), 'count', 'primary_use', orientation='h', text='count'))
-        with col2:
-            st.dataframe(top_15_primary_uses)
+        with st.expander("Top Primary Uses"):
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                st.plotly_chart(create_bar_chart(top_15_primary_uses.head(15), 'count', 'primary_use', orientation='h', text='count'))
+            with col2:
+                st.dataframe(top_15_primary_uses)
 
 def visualize_observations(tab, data):
     with tab:
-        st.subheader("Top Observations")
-        top_observations = get_top_items(data, 'value', 'Observation')
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_bar_chart(top_observations.head(20), 'count', 'Observation', orientation='h', text='count'))
-        with col2:
-            st.dataframe(top_observations)
+        with st.expander("Top Observations"):
+            top_observations = get_top_items(data, 'value', 'Observation')
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_bar_chart(top_observations.head(20), 'count', 'Observation', orientation='h', text='count'))
+            with col2:
+                st.dataframe(top_observations)
 
-        st.subheader("Observations by Gender")
-        observations_gender = analyze_observation_by_gender(data)
-        observations_gender['Total'] = observations_gender.groupby('value')['count'].transform('sum')
-        observations_gender = observations_gender.sort_values(by='Total', ascending=False)
-        observations_pivot = observations_gender.pivot(index='value', columns='gender', values='count').fillna(0)
-        observations_pivot['Total'] = observations_pivot.sum(axis=1)
-        observations_pivot = observations_pivot.sort_values(by='Total', ascending=False)
+        with st.expander("Observations by Gender"):
+            observations_gender = analyze_observation_by_gender(data)
+            observations_gender['Total'] = observations_gender.groupby('value')['count'].transform('sum')
+            observations_gender = observations_gender.sort_values(by='Total', ascending=False)
+            observations_pivot = observations_gender.pivot(index='value', columns='gender', values='count').fillna(0)
+            observations_pivot['Total'] = observations_pivot.sum(axis=1)
+            observations_pivot = observations_pivot.sort_values(by='Total', ascending=False)
 
-        col1, col2 = st.columns([70, 30])
-        with col1:
-            st.plotly_chart(create_bar_chart(
-                observations_pivot.head(20).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
-                'count',
-                'value',
-                orientation='h',
-                color='gender',
-                text='count'
-            ))
-        with col2:
-            st.dataframe(observations_pivot)
+            col1, col2 = st.columns([70, 30])
+            with col1:
+                st.plotly_chart(create_bar_chart(
+                    observations_pivot.head(20).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
+                    'count',
+                    'value',
+                    orientation='h',
+                    color='gender',
+                    text='count'
+                ))
+            with col2:
+                st.dataframe(observations_pivot)
 
 def visualize_diagnostics(tab, data):
     with tab:
-        st.subheader("Top Diagnostics")
-        top_diagnostics = get_top_items(data, 'value', 'Diagnostic')
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.plotly_chart(create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count'))
-        with col2:
-            st.dataframe(top_diagnostics)
+        with st.expander("Top Diagnostics"):
+            top_diagnostics = get_top_items(data, 'value', 'Diagnostic')
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.plotly_chart(create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count'))
+            with col2:
+                st.dataframe(top_diagnostics)
 
-        st.subheader("Diagnostics by Gender")
-        diagnostics_gender = analyze_diagnostics_by_gender(data)
-        diagnostics_gender['Total'] = diagnostics_gender.groupby('value')['count'].transform('sum')
-        diagnostics_gender = diagnostics_gender.sort_values(by='Total', ascending=False)
-        diagnostics_pivot = diagnostics_gender.pivot(index='value', columns='gender', values='count').fillna(0)
-        diagnostics_pivot['Total'] = diagnostics_pivot.sum(axis=1)
-        diagnostics_pivot = diagnostics_pivot.sort_values(by='Total', ascending=False)
+        with st.expander("Diagnostics by Gender"):
+            diagnostics_gender = analyze_diagnostics_by_gender(data)
+            diagnostics_gender['Total'] = diagnostics_gender.groupby('value')['count'].transform('sum')
+            diagnostics_gender = diagnostics_gender.sort_values(by='Total', ascending=False)
+            diagnostics_pivot = diagnostics_gender.pivot(index='value', columns='gender', values='count').fillna(0)
+            diagnostics_pivot['Total'] = diagnostics_pivot.sum(axis=1)
+            diagnostics_pivot = diagnostics_pivot.sort_values(by='Total', ascending=False)
 
-        col1, col2 = st.columns([70, 30])
-        with col1:
-            st.plotly_chart(create_bar_chart(
-                diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
-                'count',
-                'value',
-                orientation='h',
-                color='gender',
-                text='count'
-            ))
-        with col2:
-            st.dataframe(diagnostics_pivot)
+            col1, col2 = st.columns([70, 30])
+            with col1:
+                st.plotly_chart(create_bar_chart(
+                    diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
+                    'count',
+                    'value',
+                    orientation='h',
+                    color='gender',
+                    text='count'
+                ))
+            with col2:
+                st.dataframe(diagnostics_pivot)
 
 def visualize_manufacturer_medicines(tab, data):
     with tab:
-        st.subheader("Medicines by Manufacturer")
-        top_15_manufacturers, _ = analyze_pharma_data(data)
+        with st.expander("Medicines by Manufacturer"):
+            top_15_manufacturers, _ = analyze_pharma_data(data)
 
-        top_15_manufacturers = top_15_manufacturers['manufacturers'].tolist()
-        selected_manufacturer = st.selectbox("Select Manufacturer", top_15_manufacturers)
+            top_15_manufacturers = top_15_manufacturers['manufacturers'].tolist()
+            selected_manufacturer = st.selectbox("Select Manufacturer", top_15_manufacturers)
 
-        if selected_manufacturer:
-            manufacturer_data = data[data['manufacturers'].str.upper() == selected_manufacturer]
+            if selected_manufacturer:
+                manufacturer_data = data[data['manufacturers'].str.upper() == selected_manufacturer]
 
-            medicine_counts = (
-                manufacturer_data[manufacturer_data['type'] == 'Medicine']['value']
-                .dropna()
-                .str.upper()
-                .value_counts()
-                .reset_index()
-            )
-            medicine_counts.columns = ['Medicine', 'Count']
+                medicine_counts = (
+                    manufacturer_data[manufacturer_data['type'] == 'Medicine']['value']
+                    .dropna()
+                    .str.upper()
+                    .value_counts()
+                    .reset_index()
+                )
+                medicine_counts.columns = ['Medicine', 'Count']
 
-            col1, col2 = st.columns([3, 1])
+                col1, col2 = st.columns([3, 1])
 
-            with col1:
-                st.plotly_chart(create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count', f"Medicines by {selected_manufacturer}"))
+                with col1:
+                    st.plotly_chart(create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count', f"Medicines by {selected_manufacturer}"))
 
-            with col2:
-                st.dataframe(medicine_counts)
+                with col2:
+                    st.dataframe(medicine_counts)
 
 def manufacturer_comparison_tab(tab, data):
     with tab:
@@ -443,11 +441,11 @@ def visualize_market_share_primary_use(tab, data):
         st.subheader(f"Market Share of Manufacturers for Primary Use: {selected_primary_use}")
         if not manufacturer_market_share.empty:
             fig = px.pie(
-                manufacturer_market_share,
+                manufacturer_market_share.head(20),
                 names='manufacturers',
                 values='Market_Share_Percentage',
                 title=f"Market Share of Manufacturers for {selected_primary_use}",
-                hole=0.4,
+                hole=0.4,hover_data=['Medicine_Count'],
             )
             col1, col2 = st.columns([2, 1])
             with col1:
