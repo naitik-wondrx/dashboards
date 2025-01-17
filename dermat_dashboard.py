@@ -78,12 +78,15 @@ def prepare_demographics(data):
 
     return age_group_counts.sort_values(by='count', ascending=False), gender_counts.sort_values(by='count', ascending=False)
 
-def create_pie_chart(data, names_column, values_column, title=None):
+def create_pie_chart(data, names_column, values_column, title=None,color_map=None):
+      # Define color mapping for FEMALE and MALE
     return px.pie(
         data,
         names=names_column,
         values=values_column,
-        title=title
+        title=title,
+        color=names_column,  # Specify the column for color mapping
+        color_discrete_map=color_map  # Apply the color mapping
     )
 
 def get_top_items(data, value_column, item_type):
@@ -213,7 +216,7 @@ def visualize_patient_demographics(tab, data):
         with st.expander("Gender Distribution"):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count'))
+                st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count',color_map = {'FEMALE': '#FF69B4', 'MALE': '#0F52BA'}))
             with col2:
                 st.dataframe(gender_counts)
 
