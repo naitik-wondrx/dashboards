@@ -131,6 +131,7 @@ def analyze_diagnostics_by_gender(data):
     return diagnostics_gender
 
 def analyze_pharma_data(filtered_data):
+    filtered_data['primary_use'] = filtered_data['primary_use'].fillna("").astype(str)
     top_manufacturers = (
         filtered_data['manufacturers']
         .str.upper()
@@ -172,33 +173,49 @@ def visualize_geographical_distribution(tab, data):
             patient_state_counts = aggregate_geo_data(data, 'state_name', 'id')
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
+                st.plotly_chart(
+                    create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'),
+                    use_container_width=True,
+                    key="patient_state_chart"
+                )
             with col2:
-                st.dataframe(patient_state_counts.reset_index(drop=True))
-    
+                st.dataframe(patient_state_counts.reset_index(drop=True), key="patient_state_table")
+
         with st.expander("Patient Distribution by City"):
             patient_city_counts = aggregate_geo_data(data, 'city', 'id')
             col3, col4 = st.columns([3, 1])
             with col3:
-                st.plotly_chart(create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
+                st.plotly_chart(
+                    create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count'),
+                    use_container_width=True,
+                    key="patient_city_chart"
+                )
             with col4:
-                st.dataframe(patient_city_counts.reset_index(drop=True))
-    
+                st.dataframe(patient_city_counts.reset_index(drop=True), key="patient_city_table")
+
         with st.expander("Doctor Distribution by State"):
             doctor_state_counts = aggregate_geo_data(data, 'state_name', 'doctor_id')
             col5, col6 = st.columns([3, 1])
             with col5:
-                st.plotly_chart(create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'))
+                st.plotly_chart(
+                    create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count'),
+                    use_container_width=True,
+                    key="doctor_state_chart"
+                )
             with col6:
-                st.dataframe(doctor_state_counts.reset_index(drop=True))
-    
+                st.dataframe(doctor_state_counts.reset_index(drop=True), key="doctor_state_table")
+
         with st.expander("Doctor Distribution by City"):
             doctor_city_counts = aggregate_geo_data(data, 'city', 'doctor_id')
             col7, col8 = st.columns([3, 1])
             with col7:
-                st.plotly_chart(create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count'))
+                st.plotly_chart(
+                    create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count'),
+                    use_container_width=True,
+                    key="doctor_city_chart"
+                )
             with col8:
-                st.dataframe(doctor_city_counts.reset_index(drop=True))
+                st.dataframe(doctor_city_counts.reset_index(drop=True), key="doctor_city_table")
 
 def visualize_patient_demographics(tab, data):
     with tab:
@@ -226,7 +243,7 @@ def visualize_medicines(tab, filtered_medical_data):
             top_medicines = get_top_items(filtered_medical_data, 'value', 'Medicine')
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_bar_chart(top_medicines.head(25), 'count', 'Medicine', orientation='h', text='count'))
+                st.plotly_chart(create_bar_chart(top_medicines.head(20), 'count', 'Medicine', orientation='h', text='count'))
             with col2:
                 st.dataframe(top_medicines)
 
@@ -285,9 +302,13 @@ def visualize_diagnostics(tab, data):
             top_diagnostics = get_top_items(data, 'value', 'Diagnostic')
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count'))
+                st.plotly_chart(
+                    create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count'),
+                    use_container_width=True,
+                    key="top_diagnostics_chart"
+                )
             with col2:
-                st.dataframe(top_diagnostics)
+                st.dataframe(top_diagnostics, key="top_diagnostics_table")
 
         with st.expander("Diagnostics by Gender"):
             diagnostics_gender = analyze_diagnostics_by_gender(data)
@@ -299,16 +320,20 @@ def visualize_diagnostics(tab, data):
 
             col1, col2 = st.columns([70, 30])
             with col1:
-                st.plotly_chart(create_bar_chart(
-                    diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
-                    'count',
-                    'value',
-                    orientation='h',
-                    color='gender',
-                    text='count'
-                ))
+                st.plotly_chart(
+                    create_bar_chart(
+                        diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
+                        'count',
+                        'value',
+                        orientation='h',
+                        color='gender',
+                        text='count'
+                    ),
+                    use_container_width=True,
+                    key="diagnostics_by_gender_chart"
+                )
             with col2:
-                st.dataframe(diagnostics_pivot)
+                st.dataframe(diagnostics_pivot, key="diagnostics_by_gender_table")
 
 def visualize_manufacturer_medicines(tab, data):
     with tab:
@@ -678,7 +703,23 @@ def main():
     )
     title_placeholder.title(f"Lupin Dashboard From: {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
 
-    filtered_medical_data = filter_by_date_range(clean_medical_data(apply_filters(medical_data, state_filter, city_filter, pincode_filter,speciality_filter)), start_date, end_date)
+    filtered_medical_data = filter_by_date_range(
+        clean_medical_data(
+            apply_filters(
+                medical_data,
+                state_filter,
+                city_filter,
+                pincode_filter,
+                speciality_filter
+            )
+        ),
+        start_date,
+        end_date
+    )
+
+    if filtered_medical_data.empty:
+        st.warning("No data available.")
+        return
 
 
     # Visualization Tabs
