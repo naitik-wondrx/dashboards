@@ -132,6 +132,7 @@ def analyze_diagnostics_by_gender(data):
 
 def analyze_pharma_data(filtered_data):
     filtered_data['primary_use'] = filtered_data['primary_use'].fillna("").astype(str)
+    filtered_data = filtered_data[filtered_data['primary_use'].str.strip() != ""]
     top_manufacturers = (
         filtered_data['manufacturers']
         .str.upper()
@@ -377,6 +378,7 @@ def manufacturer_comparison_tab(tab, data):
 
         # Filter data for selected manufacturers
         filtered_data = data[data['manufacturers'].isin(selected_manufacturers)]
+        filtered_data = filtered_data[filtered_data['primary_use'].str.strip() != ""]
 
         # Explode the primary_use column into multiple rows
         exploded_data = filtered_data.copy()
