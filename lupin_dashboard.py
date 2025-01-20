@@ -623,6 +623,7 @@ def visualize_vitals(tab, data):
                 # Optional: Display basic statistics
                 st.write(f"**Statistics for {vital}:**")
                 st.write(vital_data.describe())
+
 def visualize_value_comparison(tab, data):
     """
     Creates a tab for value-based comparison of manufacturers.
@@ -749,7 +750,7 @@ def get_speciality_filter(medical_data, pincode_filter):
     )
 def main():
     # Set page configuration\
-    medical_file = 'https://wondrx-internal.s3.ap-south-1.amazonaws.com/projects/dashboard/2-jan-wondrxprod_wondrx_diitized_data_with_drug.xlsx'
+    medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
 
     col1, col2 = st.columns([5, 1])
