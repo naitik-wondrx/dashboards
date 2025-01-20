@@ -4,3 +4,4 @@ primaryColor = "#1E88E5"  # Optional: Customize primary color
 backgroundColor = "#FFFFFF"  # Optional: Set background color
 secondaryBackgroundColor = "#F0F2F6"  # Optional: Adjust secondary background
 textColor = "#000000"  # Optional: Customize text color
+
