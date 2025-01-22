@@ -770,7 +770,7 @@ def main():
     
     # Load datasets
     
-    medical_data = load_data(r"C:\Users\naiti\OneDrive\Desktop\Naitik\WONDRX\Dashboards\data\Generated_Random_Dataset.csv")
+    medical_data = load_data(r"Generated_Random_Dataset.csv")
 
     # Sidebar filters for patient data
     # Sidebar filters for patient data
