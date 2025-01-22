@@ -758,7 +758,6 @@ def get_speciality_filter(medical_data, pincode_filter):
     )
 def main():
     # Set page configuration\
-    medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
 
     col1, col2 = st.columns([5, 1])
