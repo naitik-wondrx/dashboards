@@ -760,6 +760,18 @@ def main():
     # Set page configuration\
     medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
+    import streamlit as st
+
+    # Hide Streamlit style and menus
+    hide_menu_style = """
+        <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        </style>
+    """
+    st.markdown(hide_menu_style, unsafe_allow_html=True)
+
 
     col1, col2 = st.columns([5, 1])
     with col1:
