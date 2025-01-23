@@ -2,11 +2,19 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+import os
 
 
 @st.cache_data
 def load_data(file_path):
-    return pd.read_excel(file_path)
+    file_extension = os.path.splitext(file_path)[1].lower()
+
+    if file_extension == '.csv':
+        return pd.read_csv(file_path)
+    elif file_extension in ['.xls', '.xlsx']:
+        return pd.read_excel(file_path)
+    else:
+        raise ValueError("Unsupported file format. Please provide a CSV or Excel file.")
     # The file_path parameter can be a URL. No additional code needed.
 
 def load_state_coordinates(file_path):
@@ -763,13 +771,14 @@ def main():
     
     # Load datasets
     
-    medical_data = load_data(medical_file)
+    medical_data = load_data(r"C:\Users\naiti\OneDrive\Desktop\Naitik\WONDRX\Dashboards\data\Generated_Random_Dataset.csv")
 
     # Sidebar filters for patient data
     # Sidebar filters for patient data
     st.sidebar.title("Rx Analytics Filters")
 
     # State filter
+    
     state_filter = get_state_filter(medical_data)
     city_filter = get_city_filter(medical_data, state_filter)
     pincode_filter = get_pincode_filter(medical_data, state_filter, city_filter)
