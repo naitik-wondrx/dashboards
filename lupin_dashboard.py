@@ -761,15 +761,14 @@ def main():
     medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
 
-    # Hide Streamlit style and menus
-    hide_menu_style = """
+    hide_profile_css = """
         <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        ._profileContainer_gzau3_53 {
+            display: none !important;
+        }
         </style>
     """
-    st.markdown(hide_menu_style, unsafe_allow_html=True)
+    st.markdown(hide_profile_css, unsafe_allow_html=True)
 
 
     col1, col2 = st.columns([5, 1])
