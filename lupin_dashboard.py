@@ -760,7 +760,6 @@ def main():
     # Set page configuration\
     medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
-    import streamlit as st
 
     # Hide Streamlit style and menus
     hide_menu_style = """
