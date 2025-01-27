@@ -4,7 +4,8 @@ import plotly.express as px
 from datetime import datetime
 import os
 import json
-import csv
+import requests
+import time
 
 @st.cache_data
 def load_data(file_path):
@@ -804,9 +805,39 @@ def get_speciality_filter(medical_data, pincode_filter):
         options=unique_specialities,
         key="speciality_filter"
     )
+def data_source():
+    # Load datasets
+    # medical_file = st.secrets["public_url"]
+
+    # Extract the file URL from query parameters
+    file_url = st.query_params.get("file_url", None)
+
+    if not file_url:
+        st.error("No File Found")
+        raise Exception("No File Found")
+
+    try:
+        # Fetch the file from the URL
+        response = requests.get(file_url)
+        response.raise_for_status()  # Raise an error for HTTP issues
+
+        # Extract the filename from the URL or set a default name
+        filename = os.path.basename(file_url) or f"downloaded_file_{time.time()}"
+
+        # Save the file locally
+        local_file_path = os.path.join("downloads", filename)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)  # Ensure the directory exists
+
+        with open(local_file_path, "wb") as f:
+            f.write(response.content)
+
+        medical_data = load_data(local_file_path)
+        return medical_data
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching file: {e}")
+
 def main():
-    # Set page configuration\
-    medical_file = st.secrets["public_url"]
+
     st.set_page_config(layout="wide", page_title="Dashboard")
 
     col1, col2 = st.columns([5, 1])
@@ -819,7 +850,7 @@ def main():
     
     # Load datasets
     
-    medical_data = load_data('data\drugs_dashboard.json')
+    medical_data = data_source()
     medical_data['min_mrp'] = pd.to_numeric(medical_data['min_mrp'], errors='coerce')
     medical_data['max_mrp'] = pd.to_numeric(medical_data['max_mrp'], errors='coerce')
     

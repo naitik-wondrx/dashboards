@@ -128,3 +128,4 @@ Data_Sample_Different_TA/
 PAT.txt
 data/
 .streamlit/secrets.toml
+output.csv
