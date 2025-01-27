@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import os
-
+import json
+import csv
 
 @st.cache_data
 def load_data(file_path):
@@ -13,12 +14,17 @@ def load_data(file_path):
         return pd.read_csv(file_path)
     elif file_extension in ['.xls', '.xlsx']:
         return pd.read_excel(file_path)
+    elif file_extension == '.json':
+        return json_to_dataframe(file_path)
     else:
-        raise ValueError("Unsupported file format. Please provide a CSV or Excel file.")
+        raise ValueError("Unsupported file format. Please provide a CSV, Excel, or JSON file.")
     # The file_path parameter can be a URL. No additional code needed.
 
-def load_state_coordinates(file_path):
-    return pd.read_csv(file_path)
+def json_to_dataframe(file_path):
+    with open(file_path, 'r') as file:
+        json_data = json.load(file)
+    df = pd.json_normalize(json_data)
+    return df
 
 def clean_medical_data(data):
     data['average_mrp'] = data[['min_mrp', 'max_mrp']].mean(axis=1).round(2)
@@ -209,14 +215,30 @@ def visualize_data_types(tab, data):
             with col2:
                 st.dataframe(speciality_counts.sort_values(by='Count', ascending=False).reset_index(drop=True))
 
+def preprocess_column(data, column_name):
+    """
+    Preprocess a column to handle comma- and slash-separated values and ensure each value is treated as distinct.
+    """
+    if column_name in data.columns:
+        # Split values on commas or slashes, trim whitespace, and explode into separate rows
+        data = data.assign(
+            **{column_name: data[column_name].str.split(r'[,/]').apply(lambda x: [v.strip() for v in x] if isinstance(x, list) else [])}
+        ).explode(column_name)
+    return data
+
+
 def visualize_geographical_distribution(tab, data):
     with tab:
+        # Preprocess 'state_name' and 'city' columns to handle comma-separated values
+        data = preprocess_column(data, 'state_name')
+        data = preprocess_column(data, 'city')
+
         with st.expander("Patient Distribution by State"):
             patient_state_counts = aggregate_geo_data(data, 'state_name', 'id')
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.plotly_chart(
-                    create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count',color='count'),
+                    create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count', color='count'),
                     use_container_width=True,
                     key="patient_state_chart"
                 )
@@ -228,7 +250,7 @@ def visualize_geographical_distribution(tab, data):
             col3, col4 = st.columns([3, 1])
             with col3:
                 st.plotly_chart(
-                    create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count',color='count'),
+                    create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count', color='count'),
                     use_container_width=True,
                     key="patient_city_chart"
                 )
@@ -240,7 +262,7 @@ def visualize_geographical_distribution(tab, data):
             col5, col6 = st.columns([3, 1])
             with col5:
                 st.plotly_chart(
-                    create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count',color='count'),
+                    create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count', color='count'),
                     use_container_width=True,
                     key="doctor_state_chart"
                 )
@@ -252,7 +274,7 @@ def visualize_geographical_distribution(tab, data):
             col7, col8 = st.columns([3, 1])
             with col7:
                 st.plotly_chart(
-                    create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count',color='count'),
+                    create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count', color='count'),
                     use_container_width=True,
                     key="doctor_city_chart"
                 )
@@ -282,6 +304,7 @@ def visualize_patient_demographics(tab, data):
 def visualize_medicines(tab, filtered_medical_data):
     with tab:
         with st.expander("Top Medicines"):
+            filtered_medical_data = filtered_medical_data[ ~filtered_medical_data.value.isna()]
             top_medicines = get_top_items(filtered_medical_data, 'value', 'Medicine')
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -433,36 +456,45 @@ def visualize_manufacturer_medicines(tab, data):
         top_15_manufacturers, _ = analyze_pharma_data(data)
 
         if top_15_manufacturers is not None and not top_15_manufacturers.empty:
-            top_manufacturers_list = top_15_manufacturers['manufacturers'].tolist()
+            # Sort the manufacturers list alphabetically
+            top_manufacturers_list = sorted(top_15_manufacturers['manufacturers'].tolist())
             default_index = top_manufacturers_list.index("LUPIN LTD") if "LUPIN LTD" in top_manufacturers_list else 0
+
+            # Display manufacturer selection box
             selected_manufacturer = st.selectbox(
-            "Select Manufacturer",
-            top_manufacturers_list,
-            index=default_index
+                "Select Manufacturer",
+                top_manufacturers_list,
+                index=default_index
             )
 
             if selected_manufacturer:
-                manufacturer_data = data[data['manufacturers'].str.upper() == selected_manufacturer]
+                # Filter data for the selected manufacturer
+                manufacturer_data = data[data['manufacturers'].str.upper() == selected_manufacturer.upper()]
 
-            medicine_counts = (
-                manufacturer_data[manufacturer_data['type'] == 'Medicine']['value']
-                .dropna()
-                .str.upper()
-                .value_counts()
-                .reset_index()
-            )
-            medicine_counts.columns = ['Medicine', 'Count']
+                if not manufacturer_data.empty:
+                    medicine_counts = (
+                        manufacturer_data[manufacturer_data['type'] == 'Medicine']['value']
+                        .dropna()
+                        .str.upper()
+                        .value_counts()
+                        .reset_index()
+                    )
+                    medicine_counts.columns = ['Medicine', 'Count']
 
-            col1, col2 = st.columns([3, 1])
+                    col1, col2 = st.columns([3, 1])
 
-            with col1:
-                st.plotly_chart(create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count', f"Medicines by {selected_manufacturer}"))
+                    with col1:
+                        st.plotly_chart(
+                            create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count', f"Medicines by {selected_manufacturer}")
+                        )
 
-            with col2:
-                st.dataframe(medicine_counts)
+                    with col2:
+                        st.dataframe(medicine_counts)
+                else:
+                    st.warning(f"No data available for the selected manufacturer: {selected_manufacturer}.")
         else:
             st.warning("No manufacturer data available.")
-
+            
 def manufacturer_comparison_tab(tab, data):
     with tab:
         st.subheader("Manufacturer Comparison")
@@ -708,37 +740,53 @@ def visualize_value_comparison(tab, data):
             Patient_Count_Percentage=lambda df: (df['Patient_Count'] / df['Patient_Count'].sum() * 100).round(2))
         )
 def get_state_filter(medical_data):
+    # Split and normalize state_name values if they are combined
+    medical_data['state_name'] = medical_data['state_name'].fillna("").astype(str)
+    exploded_states = medical_data['state_name'].str.split(r'[,/]').explode().str.strip()
+    unique_states = exploded_states.dropna().unique()
+    
     return st.sidebar.multiselect(
         "Select State",
-        options=medical_data['state_name'].dropna().unique(),
+        options=sorted(unique_states),
         key="state_filter"
     )
 
 def get_city_filter(medical_data, state_filter):
+    # Filter data for the selected states
+    filtered_data = medical_data.copy()
     if state_filter:
-        filtered_cities = medical_data[medical_data['state_name'].isin(state_filter)]['city'].dropna().unique()
-    else:
-        filtered_cities = medical_data['city'].dropna().unique()
+        filtered_data['state_name'] = filtered_data['state_name'].fillna("").astype(str)
+        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(lambda x: any(state.strip() in state_filter for state in x))]
+    
+    # Split and normalize city values if they are combined
+    filtered_data['city'] = filtered_data['city'].fillna("").astype(str)
+    exploded_cities = filtered_data['city'].str.split(r'[,/]').explode().str.strip()
+    unique_cities = exploded_cities.dropna().unique()
+    
     return st.sidebar.multiselect(
         "Select City",
-        options=filtered_cities,
+        options=sorted(unique_cities),
         key="city_filter"
     )
 
 def get_pincode_filter(medical_data, state_filter, city_filter):
-    filtered_pincode_data = medical_data.copy()
+    # Filter data for the selected states and cities
+    filtered_data = medical_data.copy()
     if state_filter:
-        filtered_pincode_data = filtered_pincode_data[filtered_pincode_data['state_name'].isin(state_filter)]
+        filtered_data['state_name'] = filtered_data['state_name'].fillna("").astype(str)
+        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(lambda x: any(state.strip() in state_filter for state in x))]
     if city_filter:
-        filtered_pincode_data = filtered_pincode_data[filtered_pincode_data['city'].isin(city_filter)]
-    unique_pincodes = sorted({
-        p.strip()
-        for sublist in filtered_pincode_data['pincode'].str.split(',')
-        for p in sublist if p.strip()
-    })
+        filtered_data['city'] = filtered_data['city'].fillna("").astype(str)
+        filtered_data = filtered_data[filtered_data['city'].str.split(r'[,/]').apply(lambda x: any(city.strip() in city_filter for city in x))]
+    
+    # Split and normalize pincode values if they are combined
+    filtered_data['pincode'] = filtered_data['pincode'].fillna("").astype(str)
+    exploded_pincodes = filtered_data['pincode'].str.split(r'[,/]').explode().str.strip()
+    unique_pincodes = exploded_pincodes.dropna().unique()
+    
     return st.sidebar.multiselect(
         "Select Pincode",
-        options=unique_pincodes,
+        options=sorted(unique_pincodes),
         key="pincode_filter"
     )
 
@@ -761,16 +809,6 @@ def main():
     medical_file = st.secrets["public_url"]
     st.set_page_config(layout="wide", page_title="Dashboard")
 
-    hide_profile_css = """
-        <style>
-        ._profileContainer_gzau3_53 {
-            display: none !important;
-        }
-        </style>
-    """
-    st.markdown(hide_profile_css, unsafe_allow_html=True)
-
-
     col1, col2 = st.columns([5, 1])
     with col1:
         title_placeholder = st.empty()
@@ -781,7 +819,11 @@ def main():
     
     # Load datasets
     
-    medical_data = load_data(medical_file)
+    medical_data = load_data('data\drugs_dashboard.json')
+    medical_data['min_mrp'] = pd.to_numeric(medical_data['min_mrp'], errors='coerce')
+    medical_data['max_mrp'] = pd.to_numeric(medical_data['max_mrp'], errors='coerce')
+    
+
 
     # Sidebar filters for patient data
     # Sidebar filters for patient data
