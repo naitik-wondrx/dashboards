@@ -1,11 +1,13 @@
-import streamlit as st
+import json
+import os
+import time
+from datetime import datetime
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
-import os
-import json
 import requests
-import time
+import streamlit as st
+from streamlit import session_state as state
+
 
 @st.cache_data
 def load_data(file_path):
@@ -29,6 +31,7 @@ def json_to_dataframe(file_path):
 
 def clean_medical_data(data):
     data['average_mrp'] = data[['min_mrp', 'max_mrp']].mean(axis=1).round(2)
+    data['gender'] = data['gender'].replace("", "Unknown")
     data['value'] = data['value'].str.lower().apply(lambda x: "pain in abdomen" if "pain in abd" in str(x) else x)
     replacements = {
         'cbc': 'cbc',
@@ -39,21 +42,39 @@ def clean_medical_data(data):
         data['value'] = data['value'].str.lower().apply(lambda x: key if value in str(x) else x)
     return data
 
-def apply_filters(data, state_filter=None, city_filter=None, pincode_filter=None, speciality_filter=None):
+def apply_filters(data, state_filter=None, city_filter=None, pincode_filter=None, speciality_filter=None, 
+                  client_filter=None, project_filter=None):
+    """Filters medical data based on multiple criteria including state, city, pincode, speciality, client, and project."""
+    
     filtered_data = data.copy()
+
     if state_filter:
         filtered_data = filtered_data[filtered_data['state_name'].isin(state_filter)]
     if city_filter:
         filtered_data = filtered_data[filtered_data['city'].isin(city_filter)]
     if pincode_filter:
-        filtered_data = filtered_data[filtered_data['pincode'].str.split(',').apply(lambda x: any(p.strip() in pincode_filter for p in x))]
+        filtered_data = filtered_data[
+            filtered_data['pincode'].str.split(',').apply(lambda x: any(p.strip() in pincode_filter for p in x))]
     if speciality_filter:
         filtered_data = filtered_data[filtered_data['speciality'].isin(speciality_filter)]
+    if client_filter:
+        filtered_data = filtered_data[filtered_data['client'].isin(client_filter)]
+    if project_filter:
+        filtered_data = filtered_data[filtered_data['project'].isin(project_filter)]
+
     return filtered_data
 
 def filter_by_date_range(data, start_date, end_date):
-    data['start_time'] = pd.to_datetime(data['start_time']).dt.date
+    # Ensure 'start_time' is in datetime format
+    data['start_time'] = pd.to_datetime(data['start_time'], errors='coerce')  # Handle invalid dates
+
+    # Convert 'start_date' and 'end_date' to datetime.datetime for comparison
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+
+    # Filter the data within the specified date range
     return data[(data['start_time'] >= start_date) & (data['start_time'] <= end_date)]
+
 
 def display_sidebar_totals(filtered_data):
     st.sidebar.markdown("### Totals in Analytics")
@@ -88,14 +109,14 @@ def prepare_demographics(data):
 
     age_group_counts = data['age_group'].value_counts().reset_index()
     age_group_counts.columns = ['age_group', 'count']
-
-    gender_counts = data['gender'].str.upper().value_counts().reset_index()
+    gender_counts = data['gender'].replace({"": "Not Provided"}).str.upper().value_counts().reset_index()
     gender_counts.columns = ['gender', 'count']
 
-    return age_group_counts.sort_values(by='count', ascending=False), gender_counts.sort_values(by='count', ascending=False)
+    return age_group_counts.sort_values(by='count', ascending=False), gender_counts.sort_values(by='count',
+                                                                                                ascending=False)
 
-def create_pie_chart(data, names_column, values_column, title=None,color_map=None):
-      # Define color mapping for FEMALE and MALE
+def create_pie_chart(data, names_column, values_column, title=None, color_map=None):
+    # Define color mapping for FEMALE and MALE
     return px.pie(
         data,
         names=names_column,
@@ -105,9 +126,9 @@ def create_pie_chart(data, names_column, values_column, title=None,color_map=Non
         color_discrete_map=color_map  # Apply the color mapping
     )
 
-def get_top_items(data, value_column, item_type):
+def get_top_items(data, item_type):
     top_items = (
-        data[data['type'] == item_type][value_column]
+        data[data['type'] == item_type]['value']
         .str.upper()
         .dropna()
         .value_counts()
@@ -193,8 +214,6 @@ def analyze_pharma_data(filtered_data):
 
     return top_manufacturers, top_primary_uses
 
-
-
 def visualize_data_types(tab, data):
     with tab:
         with st.expander("Distribution of Data Types within Rx"):
@@ -206,6 +225,8 @@ def visualize_data_types(tab, data):
                 st.plotly_chart(create_pie_chart(type_counts, 'Type', 'Count'))
             with col2:
                 st.dataframe(type_counts)
+                total = type_counts['Count'].sum()
+                st.metric("Total", total)
         with st.expander("Distribution of Speciality Doctors"):
             speciality_counts = data.groupby('speciality')['doctor_id'].nunique().reset_index()
             speciality_counts.columns = ['Speciality', 'Count']
@@ -215,6 +236,8 @@ def visualize_data_types(tab, data):
                 st.plotly_chart(create_pie_chart(speciality_counts, 'Speciality', 'Count'))
             with col2:
                 st.dataframe(speciality_counts.sort_values(by='Count', ascending=False).reset_index(drop=True))
+                total = speciality_counts['Count'].sum()
+                st.metric("Total", total)
 
 def preprocess_column(data, column_name):
     """
@@ -223,10 +246,10 @@ def preprocess_column(data, column_name):
     if column_name in data.columns:
         # Split values on commas or slashes, trim whitespace, and explode into separate rows
         data = data.assign(
-            **{column_name: data[column_name].str.split(r'[,/]').apply(lambda x: [v.strip() for v in x] if isinstance(x, list) else [])}
+            **{column_name: data[column_name].str.split(r'[,/]').apply(
+                lambda x: [v.strip() for v in x] if isinstance(x, list) else [])}
         ).explode(column_name)
     return data
-
 
 def visualize_geographical_distribution(tab, data):
     with tab:
@@ -239,48 +262,60 @@ def visualize_geographical_distribution(tab, data):
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.plotly_chart(
-                    create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h', text='count', color='count'),
+                    create_bar_chart(patient_state_counts.head(15), 'count', 'state_name', orientation='h',
+                                     text='count', color='count'),
                     use_container_width=True,
                     key="patient_state_chart"
                 )
             with col2:
                 st.dataframe(patient_state_counts.reset_index(drop=True), key="patient_state_table")
+                total = patient_state_counts['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Patient Distribution by City"):
             patient_city_counts = aggregate_geo_data(data, 'city', 'id')
             col3, col4 = st.columns([3, 1])
             with col3:
                 st.plotly_chart(
-                    create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count', color='count'),
+                    create_bar_chart(patient_city_counts.head(25), 'count', 'city', orientation='h', text='count',
+                                     color='count'),
                     use_container_width=True,
                     key="patient_city_chart"
                 )
             with col4:
                 st.dataframe(patient_city_counts.reset_index(drop=True), key="patient_city_table")
+                total = patient_city_counts['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Doctor Distribution by State"):
             doctor_state_counts = aggregate_geo_data(data, 'state_name', 'doctor_id')
             col5, col6 = st.columns([3, 1])
             with col5:
                 st.plotly_chart(
-                    create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count', color='count'),
+                    create_bar_chart(doctor_state_counts.head(15), 'count', 'state_name', orientation='h', text='count',
+                                     color='count'),
                     use_container_width=True,
                     key="doctor_state_chart"
                 )
             with col6:
                 st.dataframe(doctor_state_counts.reset_index(drop=True), key="doctor_state_table")
+                total = doctor_state_counts['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Doctor Distribution by City"):
             doctor_city_counts = aggregate_geo_data(data, 'city', 'doctor_id')
             col7, col8 = st.columns([3, 1])
             with col7:
                 st.plotly_chart(
-                    create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count', color='count'),
+                    create_bar_chart(doctor_city_counts.head(25), 'count', 'city', orientation='h', text='count',
+                                     color='count'),
                     use_container_width=True,
                     key="doctor_city_chart"
                 )
             with col8:
                 st.dataframe(doctor_city_counts.reset_index(drop=True), key="doctor_city_table")
+                total = doctor_city_counts['count'].sum()
+                st.metric("Total", total)
 
 def visualize_patient_demographics(tab, data):
     with tab:
@@ -294,31 +329,44 @@ def visualize_patient_demographics(tab, data):
                 st.plotly_chart(create_pie_chart(age_group_counts, 'age_group', 'count'))
             with col2:
                 st.dataframe(age_group_counts.sort_values(by='age_group', ascending=True).reset_index(drop=True))
+                total = age_group_counts['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Gender Distribution of Patients"):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count',color_map = {'FEMALE': '#FF69B4', 'MALE': '#0F52BA'}))
+                st.plotly_chart(create_pie_chart(gender_counts, 'gender', 'count',
+                                                 color_map={'FEMALE': '#FF69B4', 'MALE': '#0F52BA'}))
             with col2:
                 st.dataframe(gender_counts)
+                total = gender_counts['count'].sum()
+                st.metric("Total", total)
 
-def visualize_medicines(tab, filtered_medical_data):
+def visualize_medicines(tab, data):
+    data = data[data['type'].str.lower() == 'medicine']
+    data['value'] = data['value'].str.strip().str.upper()
+    data = data.dropna(subset=['value'])
+
     with tab:
         with st.expander("Top Medicines"):
-            filtered_medical_data = filtered_medical_data[ ~filtered_medical_data.value.isna()]
-            top_medicines = get_top_items(filtered_medical_data, 'value', 'Medicine')
+            
+            
+            top_medicines = get_top_items(data, 'Medicine')
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_bar_chart(top_medicines.head(20), 'count', 'Medicine', orientation='h', text='count',color='count'))
+                st.plotly_chart(
+                    create_bar_chart(top_medicines.head(20), 'count', 'Medicine', orientation='h', text='count',
+                                     color='count'))
             with col2:
                 st.dataframe(top_medicines)
-        
+                total = top_medicines['count'].sum()
+                st.metric("Total", total)
+
         # Clean and explode primary use data
 
         with st.expander("Top Medicines by Primary Use"):
-
-            filtered_medical_data['primary_use'] = filtered_medical_data['primary_use'].fillna("").astype(str)
-            exploded_data = filtered_medical_data.copy()
+            data['primary_use'] = data['primary_use'].fillna("").astype(str)
+            exploded_data = data.copy()
             exploded_data = exploded_data[exploded_data['primary_use'].str.strip() != ""]
             exploded_data = exploded_data.assign(
                 exploded_primary_use=exploded_data['primary_use'].str.split('|')
@@ -327,6 +375,7 @@ def visualize_medicines(tab, filtered_medical_data):
 
             # Get unique primary uses for selection
             unique_primary_uses = exploded_data['exploded_primary_use'].dropna().unique()
+            unique_primary_uses = sorted(unique_primary_uses)
             selected_primary_use = st.selectbox("Select Primary Use", unique_primary_uses, key="primary_use_select")
 
             if not selected_primary_use:
@@ -349,18 +398,21 @@ def visualize_medicines(tab, filtered_medical_data):
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.plotly_chart(
-                    create_bar_chart(top_medicines.head(10), 'count', 'value', orientation='h', text='count', title=f"Top Medicines for {selected_primary_use}"),
+                    create_bar_chart(top_medicines.head(10), 'count', 'value', orientation='h', text='count',
+                                     title=f"Top Medicines for {selected_primary_use}"),
                     use_container_width=True,
                     key="top_medicines_chart"
                 )
             with col2:
-                st.dataframe(top_medicines.head(10).reset_index(drop=True))
+                st.dataframe(top_medicines.reset_index(drop=True))
+                total = top_medicines['count'].sum()
+                st.metric("Total", total)
 
 def visualize_pharma_analytics(tab, filtered_medical_data):
     with tab:
         top_15_manufacturers, top_15_primary_uses = analyze_pharma_data(filtered_medical_data)
-        
 
+        # Expander for Top Manufacturers
         with st.expander("Top Manufacturers"):
             if top_15_manufacturers is not None and not top_15_manufacturers.empty:
                 col1, col2 = st.columns([3, 2])
@@ -368,28 +420,76 @@ def visualize_pharma_analytics(tab, filtered_medical_data):
                     st.plotly_chart(create_pie_chart(top_15_manufacturers.head(15), 'manufacturers', 'count'))
                 with col2:
                     st.dataframe(top_15_manufacturers)
+                    total = top_15_manufacturers['count'].sum()
+                    st.metric("Total", total)
             else:
                 st.warning("No data available for Top Manufacturers.")
 
+        # Expander for Top Primary Uses
         with st.expander("Top Primary Uses"):
             if top_15_primary_uses is not None and not top_15_primary_uses.empty:
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.plotly_chart(create_bar_chart(top_15_primary_uses.head(15), 'count', 'primary_use', orientation='h', text='count', color='count'))
+                    st.plotly_chart(
+                        create_bar_chart(top_15_primary_uses.head(15), 'count', 'primary_use', orientation='h',
+                                         text='count', color='count'))
                 with col2:
                     st.dataframe(top_15_primary_uses)
+                    total = top_15_primary_uses['count'].sum()
+                    st.metric("Total", total)
             else:
                 st.warning("No data available for Top Primary Uses.")
 
+        # # Expander for Manufacturers by Primary Use
+        # with st.expander("Manufacturers by Primary Use"):
+        #     if top_15_primary_uses is not None and not top_15_primary_uses.empty:
+        #         # Create a dropdown to select a primary use
+        #         selected_primary_use = st.selectbox("Select Primary Use", top_15_primary_uses['primary_use'].unique())
+
+        #         # Filter the data for the selected primary use
+        #         filtered_data = filtered_medical_data[
+        #             filtered_medical_data['primary_use'].str.contains(selected_primary_use, case=False, na=False)]
+
+        #         if not filtered_data.empty:
+        #             # Group by manufacturers and count occurrences
+        #             manufacturer_counts = (
+        #                 filtered_data.groupby('manufacturers')
+        #                 .size()
+        #                 .reset_index(name='count')
+        #                 .sort_values(by='count', ascending=False)
+        #             )
+        #             col1, col2 = st.columns([3, 1])
+        #             with col1:
+        #                 st.plotly_chart(
+        #                     create_bar_chart(manufacturer_counts.head(10), 'count', 'manufacturers', orientation='h',
+        #                                      text='count', color='count'))
+        #             with col2:
+        #                 st.dataframe(manufacturer_counts.reset_index(drop=True))
+        #                 total = manufacturer_counts['count'].sum()
+        #                 st.metric("Total", total)
+        #         else:
+        #             st.warning(f"No data available for the selected primary use: {selected_primary_use}")
+        #     else:
+        #         st.warning("No data available for Manufacturers by Primary Use.")
+
 def visualize_observations(tab, data):
+    data = data[data['type'].str.lower() == 'observation']
+    data['value'] = data['value'].str.strip().str.upper()
+    data = data.dropna(subset=['value'])
+    data = data[~data.value.isna()]
+    data = data[data['value'].str.strip() != ""]
     with tab:
         with st.expander("Top Observations"):
-            top_observations = get_top_items(data, 'value', 'Observation')
+            top_observations = get_top_items(data, 'Observation')
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.plotly_chart(create_bar_chart(top_observations.head(20), 'count', 'Observation', orientation='h', text='count',color='count'))
+                st.plotly_chart(
+                    create_bar_chart(top_observations.head(20), 'count', 'Observation', orientation='h', text='count',
+                                     color='count'))
             with col2:
                 st.dataframe(top_observations)
+                total = top_observations['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Observations by Gender"):
             observations_gender = analyze_observation_by_gender(data)
@@ -402,7 +502,9 @@ def visualize_observations(tab, data):
             col1, col2 = st.columns([70, 30])
             with col1:
                 st.plotly_chart(create_bar_chart(
-                    observations_pivot.head(20).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
+                    observations_pivot.head(20).reset_index().drop(columns='Total').melt(id_vars='value',
+                                                                                         var_name='gender',
+                                                                                         value_name='count'),
                     'count',
                     'value',
                     orientation='h',
@@ -413,18 +515,26 @@ def visualize_observations(tab, data):
                 st.dataframe(observations_pivot)
 
 def visualize_diagnostics(tab, data):
+    data = data[data['type'].str.lower() == 'diagnostic']
+    data['value'] = data['value'].str.strip().str.upper()
+    data = data.dropna(subset=['value'])
+    data = data[~data.value.isna()]
+    data = data[data['value'].str.strip() != ""]
     with tab:
         with st.expander("Top Diagnostics"):
-            top_diagnostics = get_top_items(data, 'value', 'Diagnostic')
+            top_diagnostics = get_top_items(data, 'Diagnostic')
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.plotly_chart(
-                    create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count',color='count'),
+                    create_bar_chart(top_diagnostics.head(20), 'count', 'Diagnostic', orientation='h', text='count',
+                                     color='count'),
                     use_container_width=True,
                     key="top_diagnostics_chart"
                 )
             with col2:
                 st.dataframe(top_diagnostics, key="top_diagnostics_table")
+                total = top_diagnostics['count'].sum()
+                st.metric("Total", total)
 
         with st.expander("Diagnostics by Gender"):
             diagnostics_gender = analyze_diagnostics_by_gender(data)
@@ -438,7 +548,9 @@ def visualize_diagnostics(tab, data):
             with col1:
                 st.plotly_chart(
                     create_bar_chart(
-                        diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value', var_name='gender', value_name='count'),
+                        diagnostics_pivot.head(15).reset_index().drop(columns='Total').melt(id_vars='value',
+                                                                                            var_name='gender',
+                                                                                            value_name='count'),
                         'count',
                         'value',
                         orientation='h',
@@ -482,27 +594,35 @@ def visualize_manufacturer_medicines(tab, data):
                     )
                     medicine_counts.columns = ['Medicine', 'Count']
 
-                    col1, col2 = st.columns([3, 1])
+                    col1, col2 = st.columns([60,40])
 
                     with col1:
                         st.plotly_chart(
-                            create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count', f"Medicines by {selected_manufacturer}")
+                            create_pie_chart(medicine_counts.head(10), 'Medicine', 'Count',
+                                             f"Medicines by {selected_manufacturer}")
                         )
 
                     with col2:
                         st.dataframe(medicine_counts)
+                        total = medicine_counts['Count'].sum()
+                        col3,col4 = st.columns([1,1])
+                        with col3:
+                            st.metric("Total", total)
+                        with col4:
+                            st.metric("Strike Rate(%)", f"{(((total/(data['type'].str.lower().eq('medicine').sum())).round(4))*100).round(2)}%")
+                            st.text("Strike Rate: % of medicines prescribed by this manufacturer out of total.")
                 else:
                     st.warning(f"No data available for the selected manufacturer: {selected_manufacturer}.")
         else:
             st.warning("No manufacturer data available.")
-            
+
 def manufacturer_comparison_tab(tab, data):
     with tab:
         st.subheader("Manufacturer Comparison")
 
         # Select manufacturers to compare
         manufacturers = data['manufacturers'].dropna().unique()
-        selected_manufacturers = st.multiselect("Select Manufacturers for Comparison", manufacturers)
+        selected_manufacturers = st.multiselect("Select Manufacturers for Comparison", sorted(manufacturers))
 
         if not selected_manufacturers:
             st.info("Select at least one manufacturer to view the comparison.")
@@ -521,7 +641,7 @@ def manufacturer_comparison_tab(tab, data):
         exploded_data['exploded_primary_use'] = exploded_data['exploded_primary_use'].str.strip().str.upper()
 
         # Get unique primary uses for selection
-        unique_primary_uses = exploded_data['exploded_primary_use'].dropna().unique()
+        unique_primary_uses = sorted(exploded_data['exploded_primary_use'].dropna().unique())
         selected_primary_uses = st.multiselect("Select Primary Uses for Comparison", unique_primary_uses)
 
         if not selected_primary_uses:
@@ -531,10 +651,53 @@ def manufacturer_comparison_tab(tab, data):
         # Filter data for selected primary uses
         filtered_data = exploded_data[exploded_data['exploded_primary_use'].isin(selected_primary_uses)]
 
-        # Display data for each manufacturer and primary use
+        # **Bar Chart - Total Medicines per Manufacturer**
+        manufacturer_counts = filtered_data.groupby('manufacturers')['id'].count().reset_index()
+        manufacturer_counts.columns = ['Manufacturer', 'Total Medicines']
+
+        fig_pie = px.pie(
+            manufacturer_counts,
+            names='Manufacturer',
+            values='Total Medicines',
+            title='Total Medicines per Manufacturer',
+            hole=0.4
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
+        # Create separate pie charts for each primary use
+        primary_use_data = filtered_data.groupby(['exploded_primary_use', 'manufacturers'])['id'].count().reset_index()
+        primary_use_data.columns = ['Primary Use', 'Manufacturer', 'Count']
+
+        # Get unique primary uses
+        unique_primary_uses = primary_use_data['Primary Use'].unique()
+
+        # Create multiple columns for pie charts
+        cols = st.columns(2)  # 2 charts per row
+        for i, primary_use in enumerate(unique_primary_uses):
+            # Filter data for current primary use
+            use_data = primary_use_data[primary_use_data['Primary Use'] == primary_use]
+            
+            # Create pie chart
+            fig = px.pie(
+                use_data,
+                names='Manufacturer',
+                values='Count',
+                title=f'Distribution for {primary_use}',
+                hole=0.4
+            )
+            
+            # Display chart in alternating columns
+            with cols[i % 2]:
+                st.plotly_chart(fig, use_container_width=True)
+
+        
+        # **Data Table: Medicines per Manufacturer and Primary Use**
         for manufacturer in selected_manufacturers:
-            st.write(f"### {manufacturer}")
+            st.write(f"### Manufacturer: {manufacturer}")
             manufacturer_data = filtered_data[filtered_data['manufacturers'] == manufacturer]
+
+            # Display total number of medicines for the manufacturer
+            total_medicines = manufacturer_data.shape[0]  
+            st.write(f"**Total Medicines:** {total_medicines}")
 
             for primary_use in selected_primary_uses:
                 st.write(f"**Primary Use: {primary_use}**")
@@ -544,22 +707,30 @@ def manufacturer_comparison_tab(tab, data):
                 metrics = (
                     use_data.groupby('value')
                     .agg(
-                        Unique_Patients=('id', 'nunique'),
-                        Total=('id', 'count'),
+                        Medicine_Count=('id', 'count'),  
+                        Unique_Patients=('id', 'nunique'),  
                     )
                     .reset_index()
                 )
-                metrics['%GT Count'] = (metrics['Total'] / metrics['Total'].sum() * 100).round(2)
 
-                # Display table
+                # Add percentage column for medicine counts
                 if not metrics.empty:
+                    metrics['% Medicine Count'] = (
+                                metrics['Medicine_Count'] / metrics['Medicine_Count'].sum() * 100).round(2)
+
+                    # Display table with updated columns
                     st.dataframe(
-                        metrics.drop(['Total'], axis=1)
-                        .sort_values(by='Unique_Patients', ascending=False)
+                        metrics.sort_values(by='Medicine_Count', ascending=False)
                         .reset_index(drop=True)
+                        .rename(columns={
+                            'value': 'Medicine',
+                            'Medicine_Count': 'Total Medicines',
+                            'Unique_Patients': 'Unique Patients'
+                        })
                     )
                 else:
                     st.write("No data available for this primary use.")
+
 
 def visualize_market_share_primary_use(tab, data):
     with tab:
@@ -577,93 +748,47 @@ def visualize_market_share_primary_use(tab, data):
         unique_primary_uses = exploded_data['exploded_primary_use']
         unique_primary_uses = unique_primary_uses[unique_primary_uses != ""].unique()
 
-        selected_primary_use = st.selectbox("Select Primary Use", unique_primary_uses)
+        selected_primary_uses = st.multiselect("Select Primary Uses", sorted(unique_primary_uses))
 
-        if not selected_primary_use:
-            st.info("Select a primary use to view the market share comparison.")
+        if not selected_primary_uses:
+            st.info("Select at least one primary use to view the market share comparison.")
             return
 
-        # Filter data for the selected primary use
-        filtered_data = exploded_data[exploded_data['exploded_primary_use'] == selected_primary_use]
+        # Filter data for the selected primary uses
+        filtered_data = exploded_data[exploded_data['exploded_primary_use'].isin(selected_primary_uses)]
 
         # Calculate the market share of each manufacturer
         manufacturer_market_share = (
             filtered_data.groupby('manufacturers')
-            .agg(Medicine_Count=('value', 'count'))
+            .agg(Count=('value', 'count'))
             .reset_index()
         )
-        manufacturer_market_share['Market_Share_Percentage'] = (
-            manufacturer_market_share['Medicine_Count'] / manufacturer_market_share['Medicine_Count'].sum() * 100
+        manufacturer_market_share['Share%'] = (
+            manufacturer_market_share['Count'] / manufacturer_market_share['Count'].sum() * 100
         ).round(2)
 
         # Sort and prepare data for the pie chart
         manufacturer_market_share = manufacturer_market_share.sort_values(
-            by='Market_Share_Percentage', ascending=False
+            by='Share%', ascending=False
         ).reset_index(drop=True)
 
-        # Display pie chart and data
-        st.subheader(f"Primary Use: {selected_primary_use}")
+        st.subheader(f"Primary Uses: {', '.join(selected_primary_uses)}")
         if not manufacturer_market_share.empty:
             fig = px.pie(
-                manufacturer_market_share.head(20),
-                names='manufacturers',
-                values='Market_Share_Percentage',
-                title=f"Market Share of Manufacturers for {selected_primary_use}",
-                hole=0.4, hover_data=['Medicine_Count'],
+            manufacturer_market_share.head(20),
+            names='manufacturers',
+            values='Share%',
+            hole=0.4, hover_data=['Count'],
             )
-            col1, col2 = st.columns([2, 1])
+            col1, col2 = st.columns([60,40])
             with col1:
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
                 st.dataframe(manufacturer_market_share)
+                total = manufacturer_market_share['Count'].sum()
+                st.metric("Total", total)
         else:
-            st.warning("No data available for the selected primary use.")
-
-def visualize_vitals(tab, data):
-    """
-    Creates a tab for displaying the distribution of vitals for patients.
-    """
-    with tab:
-        st.subheader("Vitals Distribution")
-
-        # List of vitals to include
-        vitals = [
-            'Blood pressure (BP)', 'Height', 'Oxygen saturation (SpO2)', 
-            'Pulse', 'Random Blood Sugar (RBS)', 'Respiration rate', 
-            'Temperature', 'Weight'
-        ]
-
-        # Check if all vitals are present in the dataset
-        available_vitals = [vital for vital in vitals if vital in data.columns]
-
-        if not available_vitals:
-            st.warning("No vital columns found in the dataset.")
-            return
-
-        # Display a toggle for each vital
-        for vital in available_vitals:
-            with st.expander(f"Show Distribution for {vital}", expanded=False):
-                # Filter non-NaN values for the vital
-                vital_data = data[vital].dropna()
-
-                if vital_data.empty:
-                    st.info(f"No data available for {vital}.")
-                    continue
-
-                # Histogram for the vital
-                fig = px.histogram(
-                    vital_data,
-                    x=vital,
-                    title=f"Distribution of {vital}",
-                    nbins=20,
-                    labels={vital: vital},
-                    template="plotly_dark"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Optional: Display basic statistics
-                st.write(f"**Statistics for {vital}:**")
-                st.write(vital_data.describe())
+            st.warning("No data available for the selected primary uses.")
 
 def visualize_value_comparison(tab, data):
     """
@@ -706,7 +831,7 @@ def visualize_value_comparison(tab, data):
                 template="plotly_dark"
             )
             st.plotly_chart(fig, use_container_width=True)
-        
+
 
         elif toggle_option == 'Average Value':
             top_20 = manufacturer_comparison.sort_values(by='Average_Value', ascending=False).head(20)
@@ -734,21 +859,414 @@ def visualize_value_comparison(tab, data):
 
         # Display the data as a table
         st.dataframe(
-        manufacturer_comparison
-        .sort_values(by='Total_Value',ascending=False).reset_index(drop=True)
-        .assign(
-            Total_Value_Percentage=lambda df: (df['Total_Value'] / df['Total_Value'].sum() * 100).round(2),
-            Patient_Count_Percentage=lambda df: (df['Patient_Count'] / df['Patient_Count'].sum() * 100).round(2))
+            manufacturer_comparison
+            .sort_values(by='Total_Value', ascending=False).reset_index(drop=True)
+            .assign(
+                Total_Value_Percentage=lambda df: (df['Total_Value'] / df['Total_Value'].sum() * 100).round(2),
+                Patient_Count_Percentage=lambda df: (df['Patient_Count'] / df['Patient_Count'].sum() * 100).round(2))
         )
+
+def visualize_vitals(tab, data):
+    with tab:
+        st.subheader("Vital Sign Analysis")
+
+        # Get unique vitals
+        available_vitals = sorted(data['vital_type'].dropna().unique())
+
+        # User selects which vital to visualize
+        selected_vital = st.selectbox("Select a Vital to View", available_vitals)
+
+        if not selected_vital:
+            st.warning("Please select a vital sign to view.")
+            return
+
+        vital_data = data[data['vital_type'] == selected_vital].copy()
+
+        if vital_data.empty:
+            st.warning(f"No valid data available for {selected_vital} visualization.")
+            return
+
+        # Function to remove outliers using IQR
+        def remove_outliers(df, column):
+            Q1 = df[column].quantile(0.25)
+            Q3 = df[column].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 10 * IQR
+            upper_bound = Q3 + 10 * IQR
+            df[column] = df[column].clip(lower=lower_bound, upper=upper_bound)
+
+        vital_data['age'] = pd.to_numeric(vital_data['age'], errors='coerce')
+        age_bins = [0, 18, 25, 40, 60, 200]
+        age_labels = ["0-18", "19-25", "26-40", "41-60", "60+"]
+        vital_data['age_group'] = pd.cut(vital_data['age'], bins=age_bins, labels=age_labels, include_lowest=True)
+        vital_data['age_group'] = vital_data['age_group'].cat.add_categories("Unknown").fillna("Unknown")
+
+        if 'gender' not in vital_data.columns or vital_data['gender'].isnull().all():
+            vital_data['gender'] = 'Unknown'
+
+        # **Special Handling for Blood Pressure (BP)**
+        if selected_vital == "Blood pressure (BP)":
+            vital_data = vital_data[vital_data['vital_type'] == 'Blood pressure (BP)'].copy()
+            vital_data['value'] = vital_data['value'].astype(str)
+
+            # Clean BP values
+            vital_data['value'] = (
+                vital_data['value'].str.lower()
+                .str.replace('mmhg', '', regex=True)
+                .str.replace('mm/hg', '', regex=True)
+                .str.strip()
+            )
+
+            # Ensure all BP values contain both systolic and diastolic readings
+            valid_bp_rows = vital_data['value'].str.fullmatch(r'\d{2,3}/\d{2,3}')
+            vital_data = vital_data[valid_bp_rows].copy()
+
+            if vital_data.empty:
+                st.warning("No valid blood pressure readings found.")
+                return
+
+            # Split into systolic and diastolic
+            vital_data[['systolic', 'diastolic']] = vital_data['value'].str.split('/', expand=True).astype(int)
+
+            # Remove outliers
+            remove_outliers(vital_data, 'systolic')
+            remove_outliers(vital_data, 'diastolic')
+
+            # **Visualization for Blood Pressure**
+            st.subheader("Blood Pressure Distribution")
+            total_data_points = len(vital_data)
+            st.write(f"**Total Data Points Available:** {total_data_points}")
+
+            # **Box Plot - Overall**
+            with st.expander("Overall Blood Pressure Distribution"):
+                # Add summary statistics
+                overall_summary = pd.DataFrame({
+                    'Metric': ['Count', 'Mean', 'Median', 'Std Dev', 'Min', 'Max'],
+                    'Systolic': [
+                        f"{vital_data['systolic'].count()}",
+                        f"{vital_data['systolic'].mean():.1f}",
+                        f"{vital_data['systolic'].median():.1f}",
+                        f"{vital_data['systolic'].std():.1f}",
+                        f"{vital_data['systolic'].min():.1f}",
+                        f"{vital_data['systolic'].max():.1f}"
+                    ],
+                    'Diastolic': [
+                        f"{vital_data['diastolic'].count()}",
+                        f"{vital_data['diastolic'].mean():.1f}",
+                        f"{vital_data['diastolic'].median():.1f}",
+                        f"{vital_data['diastolic'].std():.1f}",
+                        f"{vital_data['diastolic'].min():.1f}",
+                        f"{vital_data['diastolic'].max():.1f}"
+                    ]
+                })
+                st.write("Summary Statistics:")
+                st.dataframe(overall_summary)
+
+                fig_overall = px.box(
+                    vital_data.melt(id_vars=['gender', 'age_group'], value_vars=['systolic', 'diastolic'],
+                                var_name='BP Type', value_name='BP Value'),
+                    x='BP Type',
+                    y='BP Value',
+                    labels={'BP Type': 'Blood Pressure Type', 'BP Value': 'Blood Pressure (mmHg)'},
+                    boxmode="group"
+                )
+                st.plotly_chart(fig_overall, use_container_width=True)
+
+            with st.expander("Blood Pressure Distribution by Gender"):
+                # Add gender-wise summary
+                gender_summary = vital_data.groupby('gender').agg({
+                    'systolic': ['count', 'mean', 'median', 'std', 'min', 'max'],
+                    'diastolic': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2)
+                
+                st.write("Gender-wise Summary Statistics:")
+                st.dataframe(gender_summary)
+
+                fig_gender = px.box(
+                    vital_data.melt(id_vars=['gender'], 
+                                value_vars=['systolic', 'diastolic'],
+                                var_name='BP Type', 
+                                value_name='BP Value'),
+                    x='BP Type', 
+                    y='BP Value',
+                    color='gender',
+                    labels={'BP Type': 'Blood Pressure Type', 
+                        'BP Value': 'Blood Pressure (mmHg)'},
+                    boxmode="group"
+                )
+                st.plotly_chart(fig_gender, use_container_width=True)
+
+            with st.expander("Blood Pressure Distribution by Age Groups"):
+                # Add age-wise summary
+                age_summary = vital_data.groupby('age_group').agg({
+                    'systolic': ['count','mean', 'median', 'std', 'min', 'max'],
+                    'diastolic': ['count','mean', 'median', 'std', 'min', 'max']
+                }).round(1)
+                age_summary = pd.DataFrame(age_summary).sort_values(by='age_group').reset_index()
+                st.write("Age-wise Summary Statistics:")
+                st.dataframe(age_summary)
+
+                fig_age = px.box(
+                    vital_data.melt(id_vars=['age_group'], 
+                                value_vars=['systolic', 'diastolic'],
+                                var_name='BP Type', 
+                                value_name='BP Value').sort_values(by='age_group'),
+                    x='BP Type', 
+                    y='BP Value',
+                    color='age_group',
+                    labels={'BP Type': 'Blood Pressure Type', 
+                        'BP Value': 'Blood Pressure (mmHg)'},
+                    boxmode="group"
+                )
+                st.plotly_chart(fig_age, use_container_width=True)
+        
+        elif selected_vital == "Pulse":
+            vital_data['value'] = vital_data['value'].astype(str)
+            vital_data['value'] = vital_data['value'].str.extract(r'(\d+\.?\d*)')  # Extract numeric values
+            vital_data['value'] = pd.to_numeric(vital_data['value'], errors='coerce')
+
+            # Remove outliers for Pulse
+            remove_outliers(vital_data, 'value')
+
+            st.subheader("Pulse Rate Distribution")
+            total_data_points = len(vital_data)
+            st.write(f"**Total Data Points Available:** {total_data_points}")
+
+            # **Box Plot - Overall**
+            with st.expander("Overall Pulse Rate Distribution"):
+                overall_summary = pd.DataFrame({
+                    'Metric': ['Count', 'Mean', 'Median', 'Std Dev', 'Min', 'Max'],
+                    'Pulse Rate': [
+                        f"{vital_data['value'].count()}",
+                        f"{vital_data['value'].mean():.1f}",
+                        f"{vital_data['value'].median():.1f}",
+                        f"{vital_data['value'].std():.1f}",
+                        f"{vital_data['value'].min():.1f}",
+                        f"{vital_data['value'].max():.1f}"
+                    ]
+                })
+                st.write("Summary Statistics:")
+                st.dataframe(overall_summary)
+
+                fig_pulse = px.box(
+                    vital_data,
+                    x='value',
+                    labels={'value': 'Pulse Rate (BPM)'},
+                    title="Pulse Rate Distribution"
+                )
+                st.plotly_chart(fig_pulse, use_container_width=True)
+
+            # **Pulse Distribution by Gender**
+            with st.expander("Pulse Rate Distribution by Gender"):
+                gender_summary = vital_data.groupby('gender').agg({
+                    'value': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2)
+                
+                st.write("Gender-wise Summary Statistics:")
+                st.dataframe(gender_summary)
+
+                fig_pulse_gender = px.box(
+                    vital_data,
+                    x='gender',
+                    y='value',
+                    color='gender',
+                    labels={'value': 'Pulse Rate (BPM)', 'gender': 'Gender'},
+                    title="Pulse Rate by Gender"
+                )
+                st.plotly_chart(fig_pulse_gender, use_container_width=True)
+
+            # **Pulse Distribution by Age Groups**
+            with st.expander("Pulse Rate Distribution by Age Groups"):
+                vital_data = vital_data.sort_values(by='age_group').reset_index(drop=True)
+                age_summary = vital_data.groupby('age_group').agg({
+                    'value': ['count','mean', 'median', 'std', 'min', 'max']
+                }).round(1)
+                age_summary = pd.DataFrame(age_summary).reset_index()
+                st.write("Age-wise Summary Statistics:")
+                st.dataframe(age_summary)
+
+                fig_pulse_age = px.box(
+                    vital_data,
+                    x='age_group',
+                    y='value',
+                    color='age_group',
+                    labels={'value': 'Pulse Rate (BPM)', 'age_group': 'Age Group'},
+                    title="Pulse Rate by Age Group"
+                )
+                st.plotly_chart(fig_pulse_age, use_container_width=True)
+
+        elif selected_vital == "Weight":
+            vital_data['value'] = vital_data['value'].astype(str)
+            # Clean weight values to include only kg or kgs units
+            weight_mask = vital_data['value'].str.contains('kg|kgs', case=False, na=True)
+            vital_data = vital_data[weight_mask]
+            vital_data['value'] = vital_data['value'].str.extract(r'(\d+\.?\d*)')  # Extract numeric values
+            vital_data['value'] = pd.to_numeric(vital_data['value'], errors='coerce')
+
+            remove_outliers(vital_data, 'value')
+
+            st.subheader("Weight Distribution")
+            total_data_points = len(vital_data)
+            st.write(f"**Total Data Points Available:** {total_data_points}")
+
+            # **Box Plot - Overall**
+            with st.expander("Overall Weight Distribution"):
+                overall_summary = vital_data.agg({
+                    'value': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2).rename(columns={'value': 'Weight (kg)'}).reset_index().rename(columns={'index': 'Metric'})
+
+                st.write("Summary Statistics:")
+                st.dataframe(overall_summary)
+
+                fig_weight = px.box(
+                    vital_data,
+                    x='value',
+                    labels={'value': 'Weight (kg)'},
+                    title="Weight Distribution"
+                )
+                st.plotly_chart(fig_weight, use_container_width=True)
+
+            # **Weight Distribution by Gender**
+            with st.expander("Weight Distribution by Gender"):
+                gender_summary = vital_data.groupby('gender').agg({
+                    'value': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2).rename(columns={'value': 'Weight (kg)'})
+
+                st.write("Gender-wise Summary Statistics:")
+                st.dataframe(gender_summary)
+
+                fig_weight_gender = px.box(
+                    vital_data,
+                    x='gender',
+                    y='value',
+                    color='gender',
+                    labels={'value': 'Weight (kg)', 'gender': 'Gender'},
+                    title="Weight by Gender"
+                )
+                st.plotly_chart(fig_weight_gender, use_container_width=True)
+
+            # **Weight Distribution by Age Groups**
+            with st.expander("Weight Distribution by Age Groups"):
+                vital_data = vital_data.sort_values(by='age_group').reset_index()
+                age_summary = vital_data.groupby('age_group').agg({
+                    'value': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2).rename(columns={'value': 'Weight (kg)'})
+                age_summary = pd.DataFrame(age_summary).reset_index()
+                st.write("Age-wise Summary Statistics:")
+                st.dataframe(age_summary)
+
+                fig_weight_age = px.box(
+                    vital_data,
+                    x='age_group',
+                    y='value',
+                    color='age_group',
+                    labels={'value': 'Weight (kg)', 'age_group': 'Age Group'},
+                    title="Weight by Age Group"
+                )
+                st.plotly_chart(fig_weight_age, use_container_width=True)
+        
+        elif selected_vital == 'Oxygen saturation (SpO2)':
+            vital_data['value'] = vital_data['value'].astype(str)
+            # Clean SpO2 values to include only percentage values
+            spo2_mask = vital_data['value'].str.contains('%', case=False, na=True)
+            vital_data = vital_data[spo2_mask]
+            
+            # Extract numeric values and handle ranges
+            vital_data['value'] = vital_data['value'].str.split('%').str[0].str.strip()
+            vital_data['value'] = vital_data['value'].apply(lambda x: 
+                str((int(x.split('-')[0].strip()) + int(x.split('-')[1].strip())) // 2) 
+                if '-' in str(x) else x)
+            
+            # Limit to realistic SpO2 values (2-3 digits)
+            vital_data['value'] = vital_data['value'].apply(lambda x: 
+                x[:3] if str(x)[0] == '1' else x[:2])
+            
+            vital_data['value'] = pd.to_numeric(vital_data['value'], errors='coerce')
+            
+            # Remove outliers for SpO2
+            vital_data = vital_data[(vital_data['value'] >= 0) & (vital_data['value'] <= 100)]
+            remove_outliers(vital_data, 'value')
+
+            st.subheader("Oxygen Saturation (SpO2) Distribution")
+            total_data_points = len(vital_data)
+            st.write(f"**Total Data Points Available:** {total_data_points}")
+
+            # **Box Plot - Overall**
+            with st.expander("Overall SpO2 Distribution"):
+                overall_summary = pd.DataFrame({
+                    'Metric': ['Count', 'Mean', 'Median', 'Std Dev', 'Min', 'Max'],
+                    'SpO2 (%)': [
+                        f"{vital_data['value'].count()}",
+                        f"{vital_data['value'].mean():.1f}",
+                        f"{vital_data['value'].median():.1f}",
+                        f"{vital_data['value'].std():.1f}",
+                        f"{vital_data['value'].min():.1f}",
+                        f"{vital_data['value'].max():.1f}"
+                    ]
+                })
+                st.write("Summary Statistics:")
+                st.dataframe(overall_summary)
+
+                fig_spo2 = px.box(
+                    vital_data,
+                    x='value',
+                    labels={'value': 'SpO2 (%)'},
+                    title="SpO2 Distribution"
+                )
+                st.plotly_chart(fig_spo2, use_container_width=True)
+
+            # **SpO2 Distribution by Gender**
+            with st.expander("SpO2 Distribution by Gender"):
+                gender_summary = vital_data.groupby('gender').agg({
+                    'value': ['count', 'mean', 'median', 'std', 'min', 'max']
+                }).round(2)
+                
+                st.write("Gender-wise Summary Statistics:")
+                st.dataframe(gender_summary)
+
+                fig_spo2_gender = px.box(
+                    vital_data,
+                    x='gender',
+                    y='value',
+                    color='gender',
+                    labels={'value': 'SpO2 (%)', 'gender': 'Gender'},
+                    title="SpO2 by Gender"
+                )
+                st.plotly_chart(fig_spo2_gender, use_container_width=True)
+
+            # **SpO2 Distribution by Age Groups**
+            with st.expander("SpO2 Distribution by Age Groups"):
+                vital_data = vital_data.sort_values(by='age_group').reset_index(drop=True)
+                age_summary = vital_data.groupby('age_group').agg({
+                    'value': ['count','mean', 'median', 'std', 'min', 'max']
+                }).round(1)
+                age_summary = pd.DataFrame(age_summary).reset_index()
+                st.write("Age-wise Summary Statistics:")
+                st.dataframe(age_summary)
+
+                fig_spo2_age = px.box(
+                    vital_data,
+                    x='age_group',
+                    y='value',
+                    color='age_group',
+                    labels={'value': 'SpO2 (%)', 'age_group': 'Age Group'},
+                    title="SpO2 by Age Group"
+                )
+                st.plotly_chart(fig_spo2_age, use_container_width=True)
+
+        else:
+            st.warning(f"{selected_vital} sparse data")
+
 def get_state_filter(medical_data):
     # Split and normalize state_name values if they are combined
     medical_data['state_name'] = medical_data['state_name'].fillna("").astype(str)
     exploded_states = medical_data['state_name'].str.split(r'[,/]').explode().str.strip()
     unique_states = exploded_states.dropna().unique()
-    
+
     return st.sidebar.multiselect(
         "Select State",
         options=sorted(unique_states),
+        default=state.get("state_filter", []),
         key="state_filter"
     )
 
@@ -757,39 +1275,46 @@ def get_city_filter(medical_data, state_filter):
     filtered_data = medical_data.copy()
     if state_filter:
         filtered_data['state_name'] = filtered_data['state_name'].fillna("").astype(str)
-        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(lambda x: any(state.strip() in state_filter for state in x))]
-    
+        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(
+            lambda x: any(state.strip() in state_filter for state in x))]
+
     # Split and normalize city values if they are combined
     filtered_data['city'] = filtered_data['city'].fillna("").astype(str)
     exploded_cities = filtered_data['city'].str.split(r'[,/]').explode().str.strip()
     unique_cities = exploded_cities.dropna().unique()
-    
+
     return st.sidebar.multiselect(
         "Select City",
         options=sorted(unique_cities),
+        default=state.get("city_filter", []),
         key="city_filter"
     )
+
 
 def get_pincode_filter(medical_data, state_filter, city_filter):
     # Filter data for the selected states and cities
     filtered_data = medical_data.copy()
     if state_filter:
         filtered_data['state_name'] = filtered_data['state_name'].fillna("").astype(str)
-        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(lambda x: any(state.strip() in state_filter for state in x))]
+        filtered_data = filtered_data[filtered_data['state_name'].str.split(r'[,/]').apply(
+            lambda x: any(state.strip() in state_filter for state in x))]
     if city_filter:
         filtered_data['city'] = filtered_data['city'].fillna("").astype(str)
-        filtered_data = filtered_data[filtered_data['city'].str.split(r'[,/]').apply(lambda x: any(city.strip() in city_filter for city in x))]
-    
+        filtered_data = filtered_data[
+            filtered_data['city'].str.split(r'[,/]').apply(lambda x: any(city.strip() in city_filter for city in x))]
+
     # Split and normalize pincode values if they are combined
     filtered_data['pincode'] = filtered_data['pincode'].fillna("").astype(str)
     exploded_pincodes = filtered_data['pincode'].str.split(r'[,/]').explode().str.strip()
     unique_pincodes = exploded_pincodes.dropna().unique()
-    
+
     return st.sidebar.multiselect(
         "Select Pincode",
         options=sorted(unique_pincodes),
+        default=state.get("pincode_filter", []),
         key="pincode_filter"
     )
+
 
 def get_speciality_filter(medical_data, pincode_filter):
     filtered_speciality_data = medical_data.copy()
@@ -803,8 +1328,29 @@ def get_speciality_filter(medical_data, pincode_filter):
     return st.sidebar.multiselect(
         "Select Speciality",
         options=unique_specialities,
+        default=state.get("speciality_filter", []),
         key="speciality_filter"
     )
+
+
+def get_client_filter(data):
+    """Extracts unique client names and provides a multi-select filter in Streamlit."""
+    if 'client' not in data.columns:
+        return []
+    unique_clients = sorted(data['client'].dropna().unique())  # Get unique non-null clients
+    selected_clients = st.sidebar.multiselect("Select Client(s)", unique_clients)
+    return selected_clients
+
+def get_project_filter(data, client_filter):
+    """Extracts unique project names and provides a multi-select filter in Streamlit."""
+    if 'project' not in data.columns:
+        return []
+    if client_filter:
+        data = data[data['client'].isin(client_filter)]
+    unique_projects = sorted(data['project'].dropna().unique())  # Get unique non-null projects
+    selected_projects = st.sidebar.multiselect("Select Project(s)", unique_projects)
+    return selected_projects
+
 def data_source():
     # Load datasets
     # medical_file = st.secrets["public_url"]
@@ -813,14 +1359,11 @@ def data_source():
     file_url = st.query_params.get("file_url", None)
 
     if not file_url:
-        st.error("No File Found")
-        raise Exception("No File Found")
+        # st.error("No File Found")
+        # raise Exception("No File Found")
+        file_url = st.secrets['file_url']
 
     try:
-        # Fetch the file from the URL
-        response = requests.get(file_url)
-        response.raise_for_status()  # Raise an error for HTTP issues
-
         # Extract the filename from the URL or set a default name
         filename = os.path.basename(file_url) or f"downloaded_file_{time.time()}"
 
@@ -828,16 +1371,24 @@ def data_source():
         local_file_path = os.path.join("downloads", filename)
         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)  # Ensure the directory exists
 
-        with open(local_file_path, "wb") as f:
-            f.write(response.content)
+        if os.path.exists(local_file_path):
+            medical_data = load_data(local_file_path)
+            return medical_data
+        else:
+            # Fetch the file from the URL
+            response = requests.get(file_url)
+            response.raise_for_status()  # Raise an error for HTTP issues
 
-        medical_data = load_data(local_file_path)
-        return medical_data
+            with open(local_file_path, "wb") as f:
+                f.write(response.content)
+
+            medical_data = load_data(local_file_path)
+            return medical_data
     except requests.exceptions.RequestException as e:
         st.error(f"Error fetching file: {e}")
 
-def main():
 
+def main():
     st.set_page_config(layout="wide", page_title="Dashboard")
 
     col1, col2 = st.columns([5, 1])
@@ -847,70 +1398,95 @@ def main():
         logo_path = 'logo.png'
         st.image(logo_path, width=150)
 
-    
     # Load datasets
-    
+
     medical_data = data_source()
     medical_data['min_mrp'] = pd.to_numeric(medical_data['min_mrp'], errors='coerce')
     medical_data['max_mrp'] = pd.to_numeric(medical_data['max_mrp'], errors='coerce')
-    
-
 
     # Sidebar filters for patient data
     # Sidebar filters for patient data
     st.sidebar.title("Rx Analytics Filters")
 
-    # State filter
-    
+ 
+    # Existing filters
     state_filter = get_state_filter(medical_data)
     city_filter = get_city_filter(medical_data, state_filter)
     pincode_filter = get_pincode_filter(medical_data, state_filter, city_filter)
     speciality_filter = get_speciality_filter(medical_data, pincode_filter)
+
+    # New filters for Client and Project
+    client_filter = get_client_filter(medical_data)  # Implement this function to get client options
+    project_filter = get_project_filter(medical_data,client_filter)  # Implement this function to get project options
+
 
     st.sidebar.header("Analytics Time Period")
     # First row of buttons
     col1, col2 = st.sidebar.columns(2)
     start_date_val = datetime(2020, 1, 1)
     end_date_val = datetime.today()
-    
+
+    # Add session state keys for each button
+    if "current_fy" not in state:
+        state.current_fy = False
+    if "previous_month" not in state:
+        state.previous_month = False
+
     if col1.button("Current FY"):
         current_year = datetime.today().year
-        start_date_val = datetime(current_year - 1, 4, 1)
-        end_date_val = datetime.today()
+        state.start_date = datetime(current_year - 1, 4, 1)
+        state.end_date = datetime.today()
+        state.current_fy = True
+        state.previous_month = False
+
     if col2.button("Previous Month"):
         today = datetime.today()
         first_day_current_month = datetime(today.year, today.month, 1)
         last_day_prev_month = first_day_current_month - pd.Timedelta(days=1)
-        start_date_val = datetime(last_day_prev_month.year, last_day_prev_month.month, 1)
-        end_date_val = last_day_prev_month
+        state.start_date = datetime(last_day_prev_month.year, last_day_prev_month.month, 1)
+        state.end_date = last_day_prev_month
+        state.previous_month = True
+        state.current_fy = False
 
     # Second row of buttons
-    col3, col4 = st.sidebar.columns([1,1])
+    col3, col4 = st.sidebar.columns([1, 1])
+
+    if "year_to_date" not in state:
+        state.year_to_date = False
+    if "previous_week" not in state:
+        state.previous_week = False
+
     if col3.button("Year To Date"):
         today = datetime.today()
-        start_date_val = datetime(today.year, 1, 1)
-        end_date_val = today
+        state.start_date = datetime(today.year, 1, 1)
+        state.end_date = today
+        state.year_to_date = True
+        state.previous_week = False
+
     if col4.button("Previous Week"):
         today = datetime.today()
-        start_date_val = today - pd.Timedelta(days=today.weekday() + 7)
-        end_date_val = start_date_val + pd.Timedelta(days=6)
-    
-    
+        state.start_date = today - pd.Timedelta(days=today.weekday() + 7)
+        state.end_date = state.start_date + pd.Timedelta(days=6)
+        state.previous_week = True
+        state.year_to_date = False
+
+    # Use session state to set the default values for the date inputs
     start_date = st.sidebar.date_input(
         "Start Date",
-        value=start_date_val,
+        value=state.get("start_date", start_date_val).date() if isinstance(state.get("start_date"), datetime) else state.get("start_date", start_date_val),
         key="start_date",
-        max_value=datetime.today(),
+        max_value=datetime.today().date(),
         format="DD-MM-YYYY",
     )
     end_date = st.sidebar.date_input(
         "End Date",
-        value=end_date_val,
+        value=state.get("end_date", end_date_val).date() if isinstance(state.get("end_date"), datetime) else state.get("end_date", end_date_val),
         key="end_date",
         min_value=start_date,
-        max_value=datetime.today(),
+        max_value=datetime.today().date(),
         format="DD-MM-YYYY",
     )
+
     title_placeholder.title(f"From: {start_date.strftime('%d-%m-%Y')} to {end_date.strftime('%d-%m-%Y')}")
 
     filtered_medical_data = filter_by_date_range(
@@ -920,7 +1496,9 @@ def main():
                 state_filter,
                 city_filter,
                 pincode_filter,
-                speciality_filter
+                speciality_filter,
+                client_filter,
+                project_filter
             )
         ),
         start_date,
@@ -931,9 +1509,8 @@ def main():
         st.warning("No data available.")
         return
 
-
     # Visualization Tabs
-    tab1, tab2, tab3, tab4,tab5,tab6,tab7,tab8,tab9,tab10,tab11  = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
         "🏷️ Manufacturer Analysis",
         "📂 Data Types within Rx",
         "📍 Geographical Distribution",
@@ -944,10 +1521,10 @@ def main():
         "🧪 Diagnostics",
         "🔍 Manufacturer Comparison",
         "💰 Value-Based Comparison",
-        "🏭 Market Share by primary use"
+        "🏭 Market Share by primary use",
+        "🩸 Vitals"
     ])
     display_sidebar_totals(filtered_medical_data)
-
 
     # Visualizations for each tab
     visualize_manufacturer_medicines(tab1, filtered_medical_data)
@@ -961,6 +1538,8 @@ def main():
     manufacturer_comparison_tab(tab9, filtered_medical_data)
     visualize_value_comparison(tab10, filtered_medical_data)
     visualize_market_share_primary_use(tab11, filtered_medical_data)
+    visualize_vitals(tab12, filtered_medical_data)
+
 
 if __name__ == "__main__":
     main()
